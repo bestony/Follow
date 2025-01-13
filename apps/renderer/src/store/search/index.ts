@@ -1,7 +1,11 @@
+import type { EntryModel } from "@follow/models/types"
+import { getStorageNS } from "@follow/utils/ns"
 import type { IFuseOptions } from "fuse.js"
 import Fuse from "fuse.js"
+import { useAtomValue } from "jotai"
+import { atomWithStorage } from "jotai/utils"
 
-import type { EntryModel } from "~/models"
+import { jotaiStore } from "~/lib/jotai"
 import { EntryService, FeedService, SubscriptionService } from "~/services"
 
 import type { SubscriptionFlatModel } from "../subscription"
@@ -10,12 +14,17 @@ import { SearchType } from "./constants"
 import { defineSearchInstance } from "./helper"
 import type { SearchResult, SearchState } from "./types"
 
+const searchTypeAtom = atomWithStorage<SearchType>(
+  getStorageNS("search-type"),
+  SearchType.Feed,
+  undefined,
+  { getOnInit: true },
+)
 const createState = (): SearchState => ({
   feeds: [],
   entries: [],
   subscriptions: [],
   keyword: "",
-  searchType: SearchType.All,
 })
 export const useSearchStore = createZustandStore<SearchState>("search")(createState)
 
@@ -44,7 +53,6 @@ class SearchActions {
     const feedsMap = new Map(feeds.map((feed) => [feed.id, feed]))
 
     const entriesFuse = this.createFuse(entries, ["title", "content", "description", "id"])
-    // @ts-expect-error
     const feedsFuse = this.createFuse(feeds, ["title", "description", "id", "siteUrl", "url"])
     const subscriptionsFuse = this.createFuse(subscriptions, ["title", "category"])
 
@@ -55,7 +63,7 @@ class SearchActions {
         subscriptions: subscriptions.length,
       },
       search(keyword: string) {
-        const type = get().searchType
+        const type = jotaiStore.get(searchTypeAtom)
         const entries = type & SearchType.Entry ? entriesFuse.search(keyword) : []
         const feeds = type & SearchType.Feed ? feedsFuse.search(keyword) : []
 
@@ -86,8 +94,9 @@ class SearchActions {
           entries: processedEntries,
           feeds,
           subscriptions: processedSubscriptions,
-          searchType: type,
         })
+
+        jotaiStore.set(searchTypeAtom, type)
 
         return get()
       },
@@ -95,12 +104,12 @@ class SearchActions {
   }
 
   setSearchType(type: SearchType) {
-    set({ searchType: type })
+    jotaiStore.set(searchTypeAtom, type)
   }
 
   getCurrentKeyword() {
     return get().keyword
   }
 }
-
+export const useSearchType = () => useAtomValue(searchTypeAtom)
 export const searchActions = new SearchActions()

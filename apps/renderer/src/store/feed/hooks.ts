@@ -1,51 +1,84 @@
-import { useMemo } from "react"
+import { views } from "@follow/constants"
+import type { FeedModel, FeedOrListRespModel, InboxModel, ListModel } from "@follow/models/types"
+import { useCallback } from "react"
 import { useTranslation } from "react-i18next"
-import { useShallow } from "zustand/react/shallow"
 
-import { FEED_COLLECTION_LIST, ROUTE_FEED_IN_FOLDER, ROUTE_FEED_PENDING, views } from "~/constants"
+import { FEED_COLLECTION_LIST, ROUTE_FEED_IN_FOLDER, ROUTE_FEED_PENDING } from "~/constants"
 import { useRouteParams } from "~/hooks/biz/useRouteParams"
-import type { TargetModel } from "~/models"
 
-import { getSubscriptionByFeedId } from "../subscription"
-import { useFeedStore } from "./store"
+import { useInboxStore } from "../inbox"
+import { useListStore } from "../list"
+import {
+  feedByIdOrUrlSelector,
+  feedByIdSelector,
+  feedByIdSelectorWithTransform,
+  feedByIdWithTransformSelector,
+  inboxByIdSelectorWithTransform,
+  listByIdSelectorWithTransform,
+} from "./selector"
+import { getPreferredTitle, useFeedStore } from "./store"
 import type { FeedQueryParams } from "./types"
 
-export const useFeedById = (feedId: Nullable<string>): TargetModel | null =>
-  useFeedStore((state) => (feedId ? state.feeds[feedId] : null))
+export function useFeedById(feedId: Nullable<string>): FeedModel | null
+export function useFeedById<T>(feedId: Nullable<string>, selector: (feed: FeedModel) => T): T | null
+export function useFeedById<T>(feedId: Nullable<string>, transform?: (feed: FeedModel) => T) {
+  return useFeedStore(
+    useCallback(
+      (state) =>
+        transform
+          ? feedByIdWithTransformSelector(feedId, transform)(state)
+          : feedByIdSelector(feedId)(state),
+      [feedId, transform],
+    ),
+  )
+}
 
 export const useFeedByIdOrUrl = (feed: FeedQueryParams) =>
-  useFeedStore((state) => {
-    if (feed.id) {
-      return state.feeds[feed.id]
-    }
-    if (feed.url) {
-      return Object.values(state.feeds).find((f) => f.type === "feed" && f.url === feed.url) || null
-    }
-    return null
-  })
+  useFeedStore(useCallback((state) => feedByIdOrUrlSelector(feed)(state), [feed]))
 
 export const useFeedByIdSelector = <T>(
   feedId: Nullable<string>,
-  selector: (feed: TargetModel) => T,
+  selector: (feed: FeedOrListRespModel) => T,
 ) =>
   useFeedStore(
-    useShallow((state) => (feedId && state.feeds[feedId] ? selector(state.feeds[feedId]) : null)),
+    useCallback(
+      (state) => feedByIdSelectorWithTransform(feedId, selector)(state),
+      [feedId, selector],
+    ),
+  )
+
+export const useListByIdSelector = <T>(
+  listId: Nullable<string>,
+  selector: (list: ListModel) => T,
+) =>
+  useListStore(
+    useCallback(
+      (state) => listByIdSelectorWithTransform(listId, selector)(state),
+      [listId, selector],
+    ),
+  )
+
+export const useInboxByIdSelector = <T>(
+  inboxId: Nullable<string>,
+  selector: (inbox: InboxModel) => T,
+) =>
+  useInboxStore(
+    useCallback(
+      (state) => inboxByIdSelectorWithTransform(inboxId, selector)(state),
+      [inboxId, selector],
+    ),
   )
 
 export const useFeedHeaderTitle = () => {
   const { t } = useTranslation()
+  const { feedId: currentFeedId, view, listId, inboxId } = useRouteParams()
 
-  const { feedId: currentFeedId, view } = useRouteParams()
-
-  const feedTitle = useFeedByIdSelector(currentFeedId, (feed) => feed.title)
-  const subscriptionTitle = useMemo(
-    () => (currentFeedId ? (getSubscriptionByFeedId(currentFeedId)?.title ?? "") : ""),
-    [currentFeedId],
-  )
+  const listTitle = useListByIdSelector(listId, getPreferredTitle)
+  const inboxTitle = useInboxByIdSelector(inboxId, getPreferredTitle)
+  const feedTitle = useFeedByIdSelector(currentFeedId, getPreferredTitle)
 
   switch (currentFeedId) {
     case ROUTE_FEED_PENDING: {
-      // TODO: fix this type error
       return t(views[view].name)
     }
     case FEED_COLLECTION_LIST: {
@@ -55,7 +88,7 @@ export const useFeedHeaderTitle = () => {
       if (currentFeedId?.startsWith(ROUTE_FEED_IN_FOLDER)) {
         return currentFeedId.replace(ROUTE_FEED_IN_FOLDER, "")
       }
-      return subscriptionTitle || feedTitle
+      return feedTitle || listTitle || inboxTitle
     }
   }
 }

@@ -1,37 +1,37 @@
+import { getCurrentEnvironment } from "@follow/utils/environment"
 import { repository } from "@pkg"
-
-import { detectBrowser, getOS } from "./utils"
 
 interface IssueOptions {
   title: string
   body: string
   label: string
+  error?: Error
+  target: "issue" | "discussion"
+  category: string
 }
-export const getNewIssueUrl = ({ body, label, title }: Partial<IssueOptions> = {}) => {
-  const baseUrl = `${repository.url}/issues/new`
+
+export const getNewIssueUrl = ({
+  body,
+  label,
+  title,
+  error,
+  target = "issue",
+  category,
+}: Partial<IssueOptions> = {}) => {
+  const baseUrl =
+    target === "discussion" ? `${repository.url}/discussions/new` : `${repository.url}/issues/new`
 
   const searchParams = new URLSearchParams()
+  if (category) searchParams.set("category", category)
 
-  const ua = navigator.userAgent
-  const appVersion = APP_VERSION
-  const env = window.electron ? "electron" : "web"
-  const os = getOS()
-  const browser = detectBrowser()
-
-  const nextBody = [
-    body || "",
-    "",
-    "### Environment",
-    "",
-    `**App Version**: ${appVersion}`,
-    `**OS**: ${os}`,
-    `**User Agent**: ${ua}`,
-    `**Env**: ${env}`,
-    `**Browser**: ${browser}`,
-  ].join("\n")
-  searchParams.set("body", nextBody)
+  let nextBody = [body || "", "", ...getCurrentEnvironment()].join("\n")
   if (label) searchParams.set("label", label)
   if (title) searchParams.set("title", title)
 
+  if (error && "traceId" in error && error.traceId) {
+    nextBody += `\n\n### Sentry Trace ID\n${error.traceId}`
+  }
+
+  searchParams.set("body", nextBody)
   return `${baseUrl}?${searchParams.toString()}`
 }

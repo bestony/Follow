@@ -1,17 +1,17 @@
+import { MotionButtonBase } from "@follow/components/ui/button/index.js"
+import { KbdCombined } from "@follow/components/ui/kbd/Kbd.js"
+import { ScrollArea } from "@follow/components/ui/scroll-area/index.js"
+import { cn } from "@follow/utils/utils"
 import clsx from "clsx"
 import { m, useDragControls } from "framer-motion"
 import { useCallback, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 
 import { useUISettingKey } from "~/atoms/settings/ui"
-import { MotionButtonBase } from "~/components/ui/button"
-import { KbdCombined } from "~/components/ui/kbd/Kbd"
-import { useCurrentModal, useModalStack } from "~/components/ui/modal"
 import { PlainModal } from "~/components/ui/modal/stacked/custom-modal"
-import { ScrollArea } from "~/components/ui/scroll-area"
-import { shortcuts } from "~/constants/shortcuts"
+import { useCurrentModal, useModalStack } from "~/components/ui/modal/stacked/hooks"
+import { shortcuts, shortcutsType } from "~/constants/shortcuts"
 import { useSwitchHotKeyScope } from "~/hooks/common"
-import { cn } from "~/lib/utils"
 
 const ShortcutModalContent = () => {
   const { dismiss } = useCurrentModal()
@@ -30,7 +30,10 @@ const ShortcutModalContent = () => {
       dragControls={dragControls}
       dragMomentum={false}
       dragElastic={0}
-      exit={{ opacity: 0 }}
+      exit={{
+        scale: 0.96,
+        opacity: 0,
+      }}
       whileDrag={{
         cursor: "grabbing",
       }}
@@ -53,7 +56,7 @@ const ShortcutModalContent = () => {
         <div className="w-full space-y-6 px-4 pb-5 pt-3">
           {Object.keys(shortcuts).map((type) => (
             <section key={type}>
-              <div className="mb-2 text-base font-medium capitalize">{type}</div>
+              <div className="mb-2 text-base font-medium capitalize">{t(shortcutsType[type])}</div>
               <div className="rounded-md border text-[13px] text-zinc-600 dark:text-zinc-300">
                 {Object.keys(shortcuts[type]).map((action, index) => (
                   <div
@@ -81,16 +84,26 @@ const ShortcutModalContent = () => {
 }
 
 export const useShortcutsModal = () => {
-  const { present } = useModalStack()
+  const { present, dismiss, getModalStackById } = useModalStack()
+  const id = "shortcuts"
 
-  return useCallback(() => {
+  const showShortcutsModal = useCallback(() => {
     present({
       title: "Shortcuts",
+      id,
       overlay: false,
-      id: "shortcuts",
       content: () => <ShortcutModalContent />,
       CustomModalComponent: PlainModal,
       clickOutsideToDismiss: true,
     })
   }, [present])
+
+  return useCallback(() => {
+    const shortcutsModal = getModalStackById(id)
+    if (shortcutsModal && shortcutsModal.modal) {
+      dismiss(id)
+      return
+    }
+    showShortcutsModal()
+  }, [dismiss, getModalStackById, showShortcutsModal])
 }

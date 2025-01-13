@@ -1,15 +1,21 @@
-import { useLayoutEffect } from "foxact/use-isomorphic-layout-effect"
+import {
+  MasonryIntersectionContext,
+  useMasonryItemRatio,
+  useMasonryItemWidth,
+  useSetStableMasonryItemRatio,
+} from "@follow/components/ui/masonry/contexts.jsx"
+import { Skeleton } from "@follow/components/ui/skeleton/index.jsx"
+import { FeedViewType } from "@follow/constants"
+import { cn } from "@follow/utils/utils"
 import { AnimatePresence, m } from "framer-motion"
 import type { PropsWithChildren } from "react"
-import { memo, useContext, useEffect, useMemo, useState } from "react"
+import { memo, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { SwipeMedia } from "~/components/ui/media/SwipeMedia"
-import { ReactVirtuosoItemPlaceholder } from "~/components/ui/placeholder"
-import { Skeleton } from "~/components/ui/skeleton"
 import { useRouteParamsSelector } from "~/hooks/biz/useRouteParams"
-import { FeedViewType } from "~/lib/enum"
-import { cn } from "~/lib/utils"
+import { filterSmallMedia } from "~/lib/utils"
+import { EntryContent } from "~/modules/entry-content"
 import { useEntry } from "~/store/entry/hooks"
 import { useImageDimensions } from "~/store/image"
 
@@ -17,12 +23,6 @@ import { usePreviewMedia } from "../../../components/ui/media/hooks"
 import { EntryItemWrapper } from "../layouts/EntryItemWrapper"
 import { GridItem, GridItemFooter } from "../templates/grid-item-template"
 import type { UniversalItemProps } from "../types"
-import {
-  MasonryIntersectionContext,
-  useMasonryItemRatio,
-  useMasonryItemWidth,
-  useSetStableMasonryItemRatio,
-} from "./contexts/picture-masonry-context"
 
 export function PictureItem({ entryId, entryPreview, translation }: UniversalItemProps) {
   const entry = useEntry(entryId) || entryPreview
@@ -30,8 +30,9 @@ export function PictureItem({ entryId, entryPreview, translation }: UniversalIte
   const isActive = useRouteParamsSelector(({ entryId }) => entryId === entry?.entries.id)
 
   const { t } = useTranslation()
-  const previewMedia = usePreviewMedia()
-  if (!entry) return <ReactVirtuosoItemPlaceholder />
+  const entryContent = useMemo(() => <EntryContent entryId={entryId} noMedia compact />, [entryId])
+  const previewMedia = usePreviewMedia(entryContent)
+  if (!entry) return null
   return (
     <GridItem entryId={entryId} entryPreview={entryPreview} translation={translation}>
       <div className="relative flex gap-2 overflow-x-auto">
@@ -40,17 +41,16 @@ export function PictureItem({ entryId, entryPreview, translation }: UniversalIte
             media={entry.entries.media}
             className={cn(
               "aspect-square",
-              "w-full shrink-0 rounded-md",
+              "w-full shrink-0 rounded-md [&_img]:rounded-md",
               isActive && "rounded-b-none",
             )}
             imgClassName="object-cover"
-            uniqueKey={entryId}
             onPreview={(media, i) => {
               previewMedia(media, i)
             }}
           />
         ) : (
-          <div className="center aspect-square  w-full flex-col gap-1 rounded-md bg-muted text-xs text-muted-foreground">
+          <div className="center aspect-square w-full flex-col gap-1 rounded-md bg-muted text-xs text-muted-foreground">
             <i className="i-mgc-sad-cute-re size-6" />
             {t("entry_content.no_content")}
           </div>
@@ -64,67 +64,84 @@ const proxySize = {
   width: 600,
   height: 0,
 }
+
+const footerAnimate = { opacity: 1, y: 0 }
+const footerExit = { opacity: 0, y: 10 }
 export const PictureWaterFallItem = memo(function PictureWaterFallItem({
   entryId,
   entryPreview,
   translation,
-}: UniversalItemProps) {
+  index,
+  className,
+}: UniversalItemProps & { index: number; className?: string }) {
   const entry = useEntry(entryId) || entryPreview
 
   const isActive = useRouteParamsSelector(({ entryId }) => entryId === entry?.entries.id)
-
-  const previewMedia = usePreviewMedia()
+  const entryContent = useMemo(() => <EntryContent entryId={entryId} noMedia compact />, [entryId])
+  const previewMedia = usePreviewMedia(entryContent)
   const itemWidth = useMasonryItemWidth()
 
   const [ref, setRef] = useState<HTMLDivElement | null>(null)
   const intersectionObserver = useContext(MasonryIntersectionContext)
 
-  useLayoutEffect(() => {
-    if (ref) {
-      intersectionObserver.observe(ref)
-    }
+  useEffect(() => {
+    if (!ref || !intersectionObserver) return
+
+    intersectionObserver.observe(ref)
+
     return () => {
-      if (ref) {
-        intersectionObserver.unobserve(ref)
-      }
+      intersectionObserver.unobserve(ref)
     }
   }, [ref, intersectionObserver])
 
   const [isMouseEnter, setIsMouseEnter] = useState(false)
+
+  const media = useMemo(() => filterSmallMedia(entry?.entries.media || []), [entry?.entries.media])
+
+  const handleMouseEnter = useCallback(() => {
+    setIsMouseEnter(true)
+  }, [])
+  const handleMouseLeave = useCallback(() => {
+    setIsMouseEnter(false)
+  }, [])
+  if (media?.length === 0) return null
   if (!entry) return null
 
   return (
     <div
       ref={setRef}
       data-entry-id={entryId}
-      onMouseEnter={() => setIsMouseEnter(true)}
-      onMouseLeave={() => setIsMouseEnter(false)}
+      data-index={index}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onTouchMove={handleMouseEnter}
+      onTouchEnd={handleMouseLeave}
+      className={className}
     >
       <EntryItemWrapper
         view={FeedViewType.Pictures}
         entry={entry}
-        itemClassName="group hover:bg-theme-item-hover rounded-md"
+        itemClassName="group hover:bg-theme-item-hover rounded-md overflow-hidden"
         style={{
           width: itemWidth,
         }}
       >
-        {entry.entries.media && entry.entries.media.length > 0 ? (
-          <MasonryItemFixedDimensionWrapper url={entry.entries.media[0].url}>
+        {media && media.length > 0 ? (
+          <MasonryItemFixedDimensionWrapper url={media[0].url}>
             <SwipeMedia
-              media={entry.entries.media}
+              media={media}
               className={cn("w-full shrink-0 grow rounded-md", isActive && "rounded-b-none")}
               proxySize={proxySize}
               imgClassName="object-cover"
-              uniqueKey={entryId}
               onPreview={previewMedia}
             />
 
             <AnimatePresence>
               {isMouseEnter && (
                 <m.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
+                  initial={footerExit}
+                  animate={footerAnimate}
+                  exit={footerExit}
                   className="absolute inset-x-0 -bottom-px z-[3] overflow-hidden rounded-b-md pb-1"
                   key="footer"
                 >
@@ -191,6 +208,10 @@ const MasonryItemFixedDimensionWrapper = (
       {children}
     </div>
   )
+}
+
+MasonryItemFixedDimensionWrapper.whyDidYouRender = {
+  logOnDifferentValues: true,
 }
 
 export const PictureItemSkeleton = (

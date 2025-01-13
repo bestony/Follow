@@ -1,30 +1,39 @@
+import type { FeedModel, FeedOrListModel } from "@follow/models/types"
+
 import { browserDB } from "~/database"
-import type { TargetModel } from "~/models/types"
+import { feedActions } from "~/store/feed"
 
 import { BaseService } from "./base"
 import { CleanerService } from "./cleaner"
+import type { Hydratable } from "./interface"
 
-type TargetModelWithId = TargetModel & { id: string }
-class ServiceStatic extends BaseService<TargetModelWithId> {
+type FeedModelWithId = FeedModel & { id: string }
+class ServiceStatic extends BaseService<FeedModelWithId> implements Hydratable {
   constructor() {
     super(browserDB.feeds)
   }
 
-  override async upsertMany(data: TargetModel[]) {
+  override async upsertMany(data: FeedOrListModel[]) {
     const filterData = data.filter((d) => d.id)
+
     CleanerService.reset(filterData.map((d) => ({ type: "feed", id: d.id! })))
 
-    return this.table.bulkPut(filterData as TargetModelWithId[])
+    return this.table.bulkPut(filterData as FeedModelWithId[])
   }
 
-  override async upsert(data: TargetModel): Promise<string | null> {
+  override async upsert(data: FeedOrListModel): Promise<string | null> {
     if (!data.id) return null
     CleanerService.reset([{ type: "feed", id: data.id }])
-    return this.table.put(data as TargetModelWithId)
+    return this.table.put(data as FeedModelWithId)
   }
 
   async bulkDelete(ids: string[]) {
     return this.table.bulkDelete(ids)
+  }
+
+  async hydrate() {
+    const feeds = await FeedService.findAll()
+    feedActions.upsertMany(feeds)
   }
 }
 
